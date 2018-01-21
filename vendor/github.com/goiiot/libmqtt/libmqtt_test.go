@@ -1,3 +1,19 @@
+/*
+ * Copyright Go-IIoT (https://github.com/goiiot)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package libmqtt
 
 import (
@@ -41,9 +57,9 @@ var (
 	testPacketID uint16 = math.MaxUint16 / 2
 
 	testConnackPresent = true
-	testConnackCode    = ConnAccepted
+	testConnackCode    = byte(CodeSuccess)
 
-	testSubAckCodes = []SubAckCode{SubOkMaxQos0, SubOkMaxQos1, SubFail}
+	testSubAckCodes = []byte{SubOkMaxQos0, SubOkMaxQos1, SubFail}
 )
 
 // conn test data
@@ -57,15 +73,15 @@ var (
 	testConnAckMsg      *ConnAckPacket
 	testConnAckMsgBytes []byte
 
-	testDisConnMsg      = DisConnPacket
+	testDisConnMsg      = &DisConnPacket{}
 	testDisConnMsgBytes []byte
 )
 
 func initConn() {
 	testConnWillMsg = &ConnPacket{
+		basePacket:   basePacket{ProtoVersion: testProtoVersion},
 		Username:     testUsername,
 		Password:     testPassword,
-		protoLevel:   testProtoVersion,
 		ClientID:     testClientID,
 		CleanSession: testCleanSession,
 		IsWill:       testWill,
@@ -81,7 +97,7 @@ func initConn() {
 	connWillPkt.Password = []byte(testPassword)
 	connWillPkt.PasswordFlag = true
 	connWillPkt.ProtocolName = "MQTT"
-	connWillPkt.ProtocolVersion = testProtoVersion
+	connWillPkt.ProtocolVersion = byte(testProtoVersion)
 	connWillPkt.ClientIdentifier = testClientID
 	connWillPkt.CleanSession = testCleanSession
 	connWillPkt.WillFlag = testWill
@@ -95,9 +111,9 @@ func initConn() {
 	testConnWillMsgBytes = connWillBuf.Bytes()
 
 	testConnMsg = &ConnPacket{
+		basePacket:   basePacket{ProtoVersion: testProtoVersion},
 		Username:     testUsername,
 		Password:     testPassword,
-		protoLevel:   testProtoVersion,
 		ClientID:     testClientID,
 		CleanSession: testCleanSession,
 		Keepalive:    testKeepalive,
@@ -108,7 +124,7 @@ func initConn() {
 	connPkt.Password = []byte(testPassword)
 	connPkt.PasswordFlag = true
 	connPkt.ProtocolName = "MQTT"
-	connPkt.ProtocolVersion = testProtoVersion
+	connPkt.ProtocolVersion = byte(testProtoVersion)
 	connPkt.ClientIdentifier = testClientID
 	connPkt.CleanSession = testCleanSession
 	connPkt.Keepalive = testKeepalive
@@ -306,7 +322,7 @@ func initPing() {
 
 func testV311Bytes(pkt Packet, target []byte, t *testing.T) {
 	buf := &bytes.Buffer{}
-	if err := EncodeOnePacket(V311, pkt, buf); err != nil {
+	if err := Encode(pkt, buf); err != nil {
 		t.Error(err)
 	}
 

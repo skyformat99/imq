@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import (
 func TestDecodeRemainLength(t *testing.T) {
 	buffer := &bytes.Buffer{}
 	buffer.Write([]byte{0x04})
-	length := decodeRemainLength(buffer)
+	length, _ := getRemainLength(buffer)
 	if length != 0x04 {
 		t.Error(length)
 	}
@@ -39,14 +39,14 @@ func TestDecodeOnePacket(t *testing.T) {
 	if _, err := buf.Write(targetBytes); err != nil {
 		t.Error(err)
 	} else {
-		pkt, err := DecodeOnePacket(V311, buf)
+		pkt, err := Decode(V311, buf)
 		if err != nil {
 			t.Error(err)
 		}
 		buf.Reset()
 		switch pkt.(type) {
 		case *ConnPacket:
-			EncodeOnePacket(V311, pkt, buf)
+			Encode(pkt, buf)
 			pktBytes := buf.Bytes()
 			if bytes.Compare(pktBytes, targetBytes) != 0 {
 				t.Error(pktBytes)
@@ -84,7 +84,7 @@ func TestDecodeOnePacket(t *testing.T) {
 	if _, err := buf.Write(malformedConnBytes); err != nil {
 		t.Error(err)
 	} else {
-		if _, err := DecodeOnePacket(V311, buf); err == nil {
+		if _, err := Decode(V311, buf); err == nil {
 			t.Error("decoded conn packet, should not happen")
 		}
 	}
@@ -99,7 +99,7 @@ func BenchmarkDecodeOnePacket(b *testing.B) {
 
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := DecodeOnePacket(V311, buf)
+		_, err := Decode(V311, buf)
 		if err != nil {
 			b.Error(err)
 		}

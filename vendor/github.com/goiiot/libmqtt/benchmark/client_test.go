@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ const (
 )
 
 var (
-	// 256 bytes
 	testTopicMsg = []byte("bar")
 )
 
@@ -42,11 +41,9 @@ func BenchmarkLibmqttClient(b *testing.B) {
 	b.ReportAllocs()
 
 	client, err := lib.NewClient(
-		//lib.WithLog(lib.Verbose),
 		lib.WithServer(testServer),
 		lib.WithKeepalive(testKeepalive, 1.2),
-		lib.WithRecvBuf(1),
-		lib.WithSendBuf(1),
+		lib.WithBuf(testBufSize, testBufSize),
 		lib.WithCleanSession(true))
 
 	if err != nil {
@@ -61,10 +58,10 @@ func BenchmarkLibmqttClient(b *testing.B) {
 	})
 
 	b.ResetTimer()
-	client.Connect(func(server string, code lib.ConnAckCode, err error) {
+	client.Connect(func(server string, code byte, err error) {
 		if err != nil {
 			b.Error(err)
-		} else if code != lib.ConnAccepted {
+		} else if code != lib.CodeSuccess {
 			b.Error(code)
 		}
 		for i := 0; i < b.N; i++ {

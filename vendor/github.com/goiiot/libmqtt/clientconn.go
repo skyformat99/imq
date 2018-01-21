@@ -1,3 +1,19 @@
+/*
+ * Copyright Go-IIoT (https://github.com/goiiot)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package libmqtt
 
 import (
@@ -9,21 +25,21 @@ import (
 // clientConn is the wrapper of connection to server
 // tend to actual packet send and receive
 type clientConn struct {
-	parent     *client       // client which created this connection
-	name       string        // server addr info
-	conn       net.Conn      // connection to server
-	connW      *bufio.Writer // make buffered connection
-	logicSendC chan Packet   // logic send channel
-	netRecvC   chan Packet   // received packet from server
-	keepaliveC chan int      // keepalive packet
+	protoVersion ProtoVersion      // mqtt protocol version
+	parent       *client           // client which created this connection
+	name         string            // server addr info
+	conn         net.Conn          // connection to server
+	connRW       *bufio.ReadWriter // make buffered connection
+	logicSendC   chan Packet       // logic send channel
+	netRecvC     chan Packet       // received packet from server
+	keepaliveC   chan int          // keepalive packet
 }
 
 // start mqtt logic
 func (c *clientConn) logic() {
 	defer func() {
 		c.conn.Close()
-		c.parent.workers.Done()
-		c.parent.log.e("CONN exit logic for server =", c.name)
+		c.parent.log.e("NET exit logic for server =", c.name)
 	}()
 
 	// start keepalive if required
@@ -44,7 +60,7 @@ func (c *clientConn) logic() {
 			switch pkt.(type) {
 			case *SubAckPacket:
 				p := pkt.(*SubAckPacket)
-				c.parent.log.d("NET received SubAck, id =", p.PacketID)
+				c.parent.log.v("NET received SubAck, id =", p.PacketID)
 
 				if originPkt, ok := c.parent.idGen.getExtra(p.PacketID); ok {
 					switch originPkt.(type) {
@@ -56,33 +72,31 @@ func (c *clientConn) logic() {
 								v.Qos = p.Codes[i]
 							}
 						}
-						c.parent.log.d("CLIENT subscribed topics =", originSub.Topics)
-						notifyMsg(c.parent.msgC, newSubMsg(originSub.Topics, nil))
+						c.parent.log.d("NET subscribed topics =", originSub.Topics)
+						notifySubMsg(c.parent.msgC, originSub.Topics, nil)
 						c.parent.idGen.free(p.PacketID)
 
-						notifyMsg(c.parent.msgC, newPersistMsg(
-							c.parent.persist.Delete(sendKey(p.PacketID))))
+						notifyPersistMsg(c.parent.msgC, c.parent.persist.Delete(sendKey(p.PacketID)))
 					}
 				}
 			case *UnSubAckPacket:
 				p := pkt.(*UnSubAckPacket)
-				c.parent.log.d("NET received UnSubAck, id =", p.PacketID)
+				c.parent.log.v("NET received UnSubAck, id =", p.PacketID)
 
 				if originPkt, ok := c.parent.idGen.getExtra(p.PacketID); ok {
 					switch originPkt.(type) {
 					case *UnSubPacket:
 						originUnSub := originPkt.(*UnSubPacket)
-						c.parent.log.d("CLIENT unSubscribed topics", originUnSub.TopicNames)
-						notifyMsg(c.parent.msgC, newUnSubMsg(originUnSub.TopicNames, nil))
+						c.parent.log.d("NET unSubscribed topics", originUnSub.TopicNames)
+						notifyUnSubMsg(c.parent.msgC, originUnSub.TopicNames, nil)
 						c.parent.idGen.free(p.PacketID)
 
-						notifyMsg(c.parent.msgC, newPersistMsg(
-							c.parent.persist.Delete(sendKey(p.PacketID))))
+						notifyPersistMsg(c.parent.msgC, c.parent.persist.Delete(sendKey(p.PacketID)))
 					}
 				}
 			case *PublishPacket:
 				p := pkt.(*PublishPacket)
-				c.parent.log.d("NET received publish, topic =", p.TopicName, "id =", p.PacketID, "QoS =", p.Qos)
+				c.parent.log.v("NET received publish, topic =", p.TopicName, "id =", p.PacketID, "QoS =", p.Qos)
 				// received server publish, send to client
 				c.parent.recvC <- p
 
@@ -92,36 +106,33 @@ func (c *clientConn) logic() {
 					c.parent.log.d("NET send PubAck for Publish, id =", p.PacketID)
 					c.send(&PubAckPacket{PacketID: p.PacketID})
 
-					notifyMsg(c.parent.msgC, newPersistMsg(
-						c.parent.persist.Store(recvKey(p.PacketID), pkt)))
+					notifyPersistMsg(c.parent.msgC, c.parent.persist.Store(recvKey(p.PacketID), pkt))
 				case Qos2:
 					c.parent.log.d("NET send PubRecv for Publish, id =", p.PacketID)
 					c.send(&PubRecvPacket{PacketID: p.PacketID})
 
-					notifyMsg(c.parent.msgC, newPersistMsg(
-						c.parent.persist.Store(recvKey(p.PacketID), pkt)))
+					notifyPersistMsg(c.parent.msgC, c.parent.persist.Store(recvKey(p.PacketID), pkt))
 				}
 			case *PubAckPacket:
 				p := pkt.(*PubAckPacket)
-				c.parent.log.d("NET received PubAck, id =", p.PacketID)
+				c.parent.log.v("NET received PubAck, id =", p.PacketID)
 
 				if originPkt, ok := c.parent.idGen.getExtra(p.PacketID); ok {
 					switch originPkt.(type) {
 					case *PublishPacket:
 						originPub := originPkt.(*PublishPacket)
 						if originPub.Qos == Qos1 {
-							c.parent.log.d("CLIENT published qos1 packet, topic =", originPub.TopicName)
-							notifyMsg(c.parent.msgC, newPubMsg(originPub.TopicName, nil))
+							c.parent.log.d("NET published qos1 packet, topic =", originPub.TopicName)
+							notifyPubMsg(c.parent.msgC, originPub.TopicName, nil)
 							c.parent.idGen.free(p.PacketID)
 
-							notifyMsg(c.parent.msgC, newPersistMsg(
-								c.parent.persist.Delete(sendKey(p.PacketID))))
+							notifyPersistMsg(c.parent.msgC, c.parent.persist.Delete(sendKey(p.PacketID)))
 						}
 					}
 				}
 			case *PubRecvPacket:
 				p := pkt.(*PubRecvPacket)
-				c.parent.log.d("NET received PubRec, id =", p.PacketID)
+				c.parent.log.v("NET received PubRec, id =", p.PacketID)
 
 				if originPkt, ok := c.parent.idGen.getExtra(p.PacketID); ok {
 					switch originPkt.(type) {
@@ -135,7 +146,7 @@ func (c *clientConn) logic() {
 				}
 			case *PubRelPacket:
 				p := pkt.(*PubRelPacket)
-				c.parent.log.d("NET send PubRel, id =", p.PacketID)
+				c.parent.log.v("NET send PubRel, id =", p.PacketID)
 
 				if originPkt, ok := c.parent.idGen.getExtra(p.PacketID); ok {
 					switch originPkt.(type) {
@@ -145,14 +156,13 @@ func (c *clientConn) logic() {
 							c.send(&PubCompPacket{PacketID: p.PacketID})
 							c.parent.log.d("NET send PubComp, id =", p.PacketID)
 
-							notifyMsg(c.parent.msgC, newPersistMsg(
-								c.parent.persist.Store(recvKey(p.PacketID), pkt)))
+							notifyPersistMsg(c.parent.msgC, c.parent.persist.Store(recvKey(p.PacketID), pkt))
 						}
 					}
 				}
 			case *PubCompPacket:
 				p := pkt.(*PubCompPacket)
-				c.parent.log.d("NET received PubComp, id =", p.PacketID)
+				c.parent.log.v("NET received PubComp, id =", p.PacketID)
 
 				if originPkt, ok := c.parent.idGen.getExtra(p.PacketID); ok {
 					switch originPkt.(type) {
@@ -161,17 +171,16 @@ func (c *clientConn) logic() {
 						if originPub.Qos == Qos2 {
 							c.send(&PubRelPacket{PacketID: p.PacketID})
 							c.parent.log.d("NET send PubRel, id =", p.PacketID)
-							c.parent.log.d("CLIENT published qos2 packet, topic =", originPub.TopicName)
-							notifyMsg(c.parent.msgC, newPubMsg(originPub.TopicName, nil))
+							c.parent.log.d("NET published qos2 packet, topic =", originPub.TopicName)
+							notifyPubMsg(c.parent.msgC, originPub.TopicName, nil)
 							c.parent.idGen.free(p.PacketID)
 
-							notifyMsg(c.parent.msgC, newPersistMsg(
-								c.parent.persist.Delete(sendKey(p.PacketID))))
+							notifyPersistMsg(c.parent.msgC, c.parent.persist.Delete(sendKey(p.PacketID)))
 						}
 					}
 				}
 			default:
-				c.parent.log.d("NET received packet, type =", pkt.Type())
+				c.parent.log.v("NET received packet, type =", pkt.Type())
 			}
 		}
 	}
@@ -187,8 +196,9 @@ func (c *clientConn) keepalive() {
 
 	defer func() {
 		t.Stop()
-		c.parent.workers.Done()
+		timeoutTimer.Stop()
 		c.parent.log.d("NET stop keepalive for server =", c.name)
+		c.parent.workers.Done()
 	}()
 
 	for {
@@ -217,9 +227,11 @@ func (c *clientConn) keepalive() {
 
 // handle mqtt logic control packet send
 func (c *clientConn) handleSend() {
+	c.parent.log.v("NET start send handle for server = ", c.name)
+
 	defer func() {
 		c.parent.workers.Done()
-		c.parent.log.e("CONN exit send handler for server =", c.name)
+		c.parent.log.e("NET exit send handler for server =", c.name)
 	}()
 
 	for {
@@ -231,12 +243,12 @@ func (c *clientConn) handleSend() {
 				return
 			}
 
-			if err := EncodeOnePacket(c.parent.options.protoVersion, pkt, c.connW); err != nil {
+			if err := Encode(pkt, c.connRW); err != nil {
 				c.parent.log.e("NET encode error", err)
 				return
 			}
 
-			if err := c.connW.Flush(); err != nil {
+			if err := c.connRW.Flush(); err != nil {
 				c.parent.log.e("NET flush error", err)
 				return
 			}
@@ -245,8 +257,8 @@ func (c *clientConn) handleSend() {
 			case CtrlPublish:
 				p := pkt.(*PublishPacket)
 				if p.Qos == 0 {
-					c.parent.log.d("CLIENT published qos0 packet, topic =", p.TopicName)
-					notifyMsg(c.parent.msgC, newPubMsg(p.TopicName, nil))
+					c.parent.log.d("NET published qos0 packet, topic =", p.TopicName)
+					notifyPubMsg(c.parent.msgC, p.TopicName, nil)
 				}
 			case CtrlDisConn:
 				// client exit with disconn
@@ -258,26 +270,26 @@ func (c *clientConn) handleSend() {
 				return
 			}
 
-			if err := EncodeOnePacket(c.parent.options.protoVersion, pkt, c.connW); err != nil {
+			if err := Encode(pkt, c.connRW); err != nil {
 				c.parent.log.e("NET encode error", err)
 				return
 			}
 
-			if err := c.connW.Flush(); err != nil {
+			if err := c.connRW.Flush(); err != nil {
 				c.parent.log.e("NET flush error", err)
 				return
 			}
 
 			switch pkt.Type() {
 			case CtrlPubRel:
-				notifyMsg(c.parent.msgC, newPersistMsg(
-					c.parent.persist.Store(sendKey(pkt.(*PubRelPacket).PacketID), pkt)))
+				notifyPersistMsg(c.parent.msgC,
+					c.parent.persist.Store(sendKey(pkt.(*PubRelPacket).PacketID), pkt))
 			case CtrlPubAck:
-				notifyMsg(c.parent.msgC, newPersistMsg(
-					c.parent.persist.Delete(sendKey(pkt.(*PubAckPacket).PacketID))))
+				notifyPersistMsg(c.parent.msgC,
+					c.parent.persist.Delete(sendKey(pkt.(*PubAckPacket).PacketID)))
 			case CtrlPubComp:
-				notifyMsg(c.parent.msgC, newPersistMsg(
-					c.parent.persist.Delete(sendKey(pkt.(*PubCompPacket).PacketID))))
+				notifyPersistMsg(c.parent.msgC,
+					c.parent.persist.Delete(sendKey(pkt.(*PubCompPacket).PacketID)))
 			case CtrlDisConn:
 				// disconnect to server
 				c.conn.Close()
@@ -290,8 +302,11 @@ func (c *clientConn) handleSend() {
 // handle all message receive
 func (c *clientConn) handleRecv() {
 	defer func() {
+		c.parent.log.e("NET exit recv handler for server =", c.name)
+		close(c.netRecvC)
+		close(c.keepaliveC)
+
 		c.parent.workers.Done()
-		c.parent.log.e("CONN exit recv handler for server =", c.name)
 	}()
 
 	for {
@@ -299,15 +314,9 @@ func (c *clientConn) handleRecv() {
 		case <-c.parent.ctx.Done():
 			return
 		default:
-			pkt, err := DecodeOnePacket(c.parent.options.protoVersion, c.conn)
+			pkt, err := Decode(c.parent.options.protoVersion, c.connRW)
 			if err != nil {
 				c.parent.log.e("NET connection broken, server =", c.name, "err =", err)
-
-				// notify net receive no packet will coming
-				close(c.netRecvC)
-
-				// notify keepalive worker to exit
-				close(c.keepaliveC)
 
 				// TODO send proper net error to net handler
 				//if err != ErrDecodeBadPacket {

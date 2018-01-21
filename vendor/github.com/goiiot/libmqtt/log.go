@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,18 +25,12 @@ import (
 type LogLevel byte
 
 const (
-	// Silent No log
-	Silent LogLevel = iota
-	// Verbose log all
-	Verbose
-	// Debug log with debug and above
-	Debug
-	// Info log with info and above
-	Info
-	// Warning log with warning and above
-	Warning
-	// Error log error only
-	Error
+	Silent  LogLevel = iota // Silent no log
+	Verbose                 // Verbose log all
+	Debug                   // Debug log with debug and above
+	Info                    // Info log with info and above
+	Warning                 // Warning log with warning and above
+	Error                   // Error log error only
 )
 
 type logger struct {

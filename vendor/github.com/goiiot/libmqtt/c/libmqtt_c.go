@@ -1,7 +1,7 @@
 // +build cgo lib
 
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,39 +21,12 @@ package main
 /*
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 
-#ifndef _LIBMQTT_CONN_H_
-#define _LIBMQTT_CONN_H_
-
-typedef enum {
-  libmqtt_connack_accepted = 0,
-  libmqtt_connack_bad_proto = 1,
-  libmqtt_connack_id_rejected = 2,
-  libmqtt_connack_srv_unavail = 3,
-  libmqtt_connack_bad_identity = 4,
-  libmqtt_connack_auth_fail = 5,
-} libmqtt_connack_t;
-
-#endif
-
-#ifndef _LIBMQTT_SUB_H_
-#define _LIBMQTT_SUB_H_
-
-typedef enum {
-  libmqtt_suback_max_qos0 = 0,
-  libmqtt_suback_max_qos1 = 1,
-  libmqtt_suback_max_qos2 = 2,
-  libmqtt_suback_fail = 0x80,
-} libmqtt_suback_t;
-
-#endif
-
-#ifndef _LIBMQTT_BRIDGE_H_
-#define _LIBMQTT_BRIDGE_H_
+#ifndef _LIBMQTT_HANDLER_H_
+#define _LIBMQTT_HANDLER_H_
 
 typedef void (*libmqtt_conn_handler)
-  (int client, char *server, libmqtt_connack_t code, char *err);
+  (int client, char *server, int code, char *err);
 
 typedef void (*libmqtt_pub_handler)
   (int client, char *topic, char *err);
@@ -73,8 +46,13 @@ typedef void (*libmqtt_persist_handler)
 typedef void (*libmqtt_topic_handler)
   (int client, char *topic, int qos, char *msg, int size);
 
+#endif
+
+#ifndef _LIBMQTT_BRIDGE_H_
+#define _LIBMQTT_BRIDGE_H_
+
 static inline void call_conn_handler
-  (libmqtt_conn_handler h, int client, char * server, libmqtt_connack_t code, char * err) {
+  (libmqtt_conn_handler h, int client, char * server, int code, char * err) {
   if (h != NULL) {
     h(client, server, code, err);
     free(server);
@@ -140,11 +118,11 @@ import "C"
 import (
 	"unsafe"
 
-	lib "github.com/goiiot/libmqtt"
+	mqtt "github.com/goiiot/libmqtt"
 )
 
 var (
-	clients = make(map[int]lib.Client)
+	clients = make(map[int]mqtt.Client)
 )
 
 // Libmqtt_handle (int client, char *topic, libmqtt_topic_handler h)
@@ -159,28 +137,12 @@ func Libmqtt_handle(client C.int, topic *C.char, h C.libmqtt_topic_handler) {
 //export Libmqtt_connect
 func Libmqtt_connect(client C.int, h C.libmqtt_conn_handler) {
 	if c, ok := clients[int(client)]; ok {
-		c.Connect(func(server string, code lib.ConnAckCode, err error) {
-			var c C.libmqtt_connack_t
-			switch code {
-			case lib.ConnAccepted:
-				c = C.libmqtt_connack_accepted
-			case lib.ConnBadProtocol:
-				c = C.libmqtt_connack_bad_proto
-			case lib.ConnIDRejected:
-				c = C.libmqtt_connack_id_rejected
-			case lib.ConnServerUnavailable:
-				c = C.libmqtt_connack_srv_unavail
-			case lib.ConnBadIdentity:
-				c = C.libmqtt_connack_bad_identity
-			case lib.ConnAuthFail:
-				c = C.libmqtt_connack_auth_fail
-			}
-
+		c.Connect(func(server string, code byte, err error) {
 			var er *C.char
 			if err != nil {
 				er = C.CString(err.Error())
 			}
-			C.call_conn_handler(h, client, C.CString(server), c, er)
+			C.call_conn_handler(h, client, C.CString(server), C.int(code), er)
 		})
 	}
 }
@@ -189,9 +151,9 @@ func Libmqtt_connect(client C.int, h C.libmqtt_conn_handler) {
 //export Libmqtt_subscribe
 func Libmqtt_subscribe(client C.int, topic *C.char, qos C.int) {
 	if c, ok := clients[int(client)]; ok {
-		c.Subscribe(&lib.Topic{
+		c.Subscribe(&mqtt.Topic{
 			Name: C.GoString(topic),
-			Qos:  lib.QosLevel(qos),
+			Qos:  mqtt.QosLevel(qos),
 		})
 	}
 }
@@ -200,9 +162,9 @@ func Libmqtt_subscribe(client C.int, topic *C.char, qos C.int) {
 //export Libmqtt_publish
 func Libmqtt_publish(client C.int, topic *C.char, qos C.int, payload *C.char, payloadSize C.int) {
 	if c, ok := clients[int(client)]; ok {
-		c.Publish(&lib.PublishPacket{
+		c.Publish(&mqtt.PublishPacket{
 			TopicName: C.GoString(topic),
-			Qos:       lib.QosLevel(qos),
+			Qos:       mqtt.QosLevel(qos),
 			Payload:   C.GoBytes(unsafe.Pointer(payload), payloadSize),
 		})
 	}
@@ -227,9 +189,9 @@ func Libmqtt_wait(client C.int) {
 
 // Libmqtt_destroy (int client, bool force)
 //export Libmqtt_destroy
-func Libmqtt_destroy(client C.int, force C.bool) {
+func Libmqtt_destroy(client C.int, force bool) {
 	if c, ok := clients[int(client)]; ok {
-		c.Destroy(bool(force))
+		c.Destroy(force)
 	}
 }
 
@@ -251,7 +213,7 @@ func Libmqtt_set_pub_handler(client C.int, h C.libmqtt_pub_handler) {
 //export Libmqtt_set_sub_handler
 func Libmqtt_set_sub_handler(client C.int, h C.libmqtt_sub_handler) {
 	if c, ok := clients[int(client)]; ok {
-		c.HandleSub(func(topics []*lib.Topic, err error) {
+		c.HandleSub(func(topics []*mqtt.Topic, err error) {
 			for _, t := range topics {
 				var er *C.char
 				if err != nil {
@@ -303,8 +265,8 @@ func Libmqtt_set_persist_handler(client C.int, h C.libmqtt_persist_handler) {
 	}
 }
 
-func wrapTopicHandler(client C.int, h C.libmqtt_topic_handler) lib.TopicHandler {
-	return func(topic string, qos lib.QosLevel, msg []byte) {
+func wrapTopicHandler(client C.int, h C.libmqtt_topic_handler) mqtt.TopicHandler {
+	return func(topic string, qos mqtt.QosLevel, msg []byte) {
 		C.call_topic_handler(h, client, C.CString(topic), C.int(qos),
 			(*C.char)(C.CBytes(msg)), C.int(len(msg)))
 	}

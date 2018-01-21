@@ -22,8 +22,8 @@
 
 
 [[constraint]]
-  branch = "master"
   name = "github.com/goiiot/libmqtt"
+  branch = "master"
 
 [[constraint]]
   name = "github.com/gorilla/websocket"

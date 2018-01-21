@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ func TestTextRouter_Dispatch(t *testing.T) {
 
 	for i := 0; i < topicCount; i++ {
 		newTopic := addTopic()
-		r.Handle(newTopic, func(topic string, code SubAckCode, msg []byte) {
+		r.Handle(newTopic, func(topic string, code byte, msg []byte) {
 			if topic != newTopic {
 				t.Error("fail at topic =", topic, ", target topic =", newTopic)
 			}
@@ -62,17 +62,17 @@ func TestRegexRouter_Dispatch(t *testing.T) {
 	r := NewRegexRouter()
 	allCount, prefixCount, numCount := 0, 0, 0
 
-	r.Handle(".*", func(topic string, code SubAckCode, msg []byte) {
+	r.Handle(".*", func(topic string, code byte, msg []byte) {
 		// should match all topics
 		allCount++
 	})
 
-	r.Handle(`^(\/test)`, func(topic string, code SubAckCode, msg []byte) {
+	r.Handle(`^(\/test)`, func(topic string, code byte, msg []byte) {
 		// should match topics with `/test` prefix
 		prefixCount++
 	})
 
-	r.Handle("\\d+", func(topic string, code SubAckCode, msg []byte) {
+	r.Handle("\\d+", func(topic string, code byte, msg []byte) {
 		// should match topics with number(s)
 		numCount++
 	})

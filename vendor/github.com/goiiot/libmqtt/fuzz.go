@@ -1,7 +1,7 @@
 // +build gofuzz
 
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import (
 )
 
 func Fuzz(data []byte) int {
-	pkt, err := DecodeOnePacket(V311, bytes.NewReader(data))
+	pkt, err := Decode(V311, bytes.NewReader(data))
 	if err != nil {
 		if pkt != nil {
 			panic("pkt != nil on error")

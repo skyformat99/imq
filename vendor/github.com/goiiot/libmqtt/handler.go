@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ package libmqtt
 // code is the ConnResult code
 // err is the error happened when connect to server, if a error happened,
 // the code value will max byte value (255)
-type ConnHandler func(server string, code ConnAckCode, err error)
+type ConnHandler func(server string, code byte, err error)
 
 // TopicHandler handles topic sub message
 // topic is the client user provided topic

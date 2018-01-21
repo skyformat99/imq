@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,76 +24,44 @@ import (
 var (
 	// ErrDecodeBadPacket is the error happened when trying to decode a none MQTT packet
 	ErrDecodeBadPacket = errors.New("decoded none MQTT packet ")
+
+	// ErrDecodeNoneV311Packet is the error happened when
+	// trying to decode mqtt 3.1.1 packet but got other mqtt packet ProtoVersion
+	ErrDecodeNoneV311Packet = errors.New("decoded none MQTT v3.1.1 packet ")
+
+	// ErrDecodeNoneV5Packet is the error happened when
+	// trying to decode mqtt 5 packet but got other mqtt packet ProtoVersion
+	ErrDecodeNoneV5Packet = errors.New("decoded none MQTT v5 packet ")
 )
 
-// DecodeOnePacket will decode one mqtt packet
-func DecodeOnePacket(version ProtocolVersion, reader io.Reader) (Packet, error) {
+// Decode will decode one mqtt packet
+func Decode(version ProtoVersion, reader BufferedReader) (Packet, error) {
 	switch version {
 	case V311:
 		return decodeV311Packet(reader)
 	case V5:
 		return decodeV5Packet(reader)
 	default:
-		return nil, errUnsupportedVersion
+		return nil, ErrUnsupportedVersion
 	}
 }
 
-func decodeString(data []byte) (string, []byte, error) {
-	b, next, err := decodeData(data)
-	if err == nil {
-		return string(b), next, err
-	}
-
-	return "", next, err
-}
-
-func decodeData(data []byte) (d []byte, next []byte, err error) {
-	if len(data) < 2 {
-		return nil, nil, ErrDecodeBadPacket
-	}
-
-	length := int(data[0])<<8 + int(data[1])
-	if length+2 > len(data) {
-		// out of bounds
-		return nil, nil, ErrDecodeBadPacket
-	}
-	return data[2 : length+2], data[length+2:], nil
-}
-
-func decodeRemainLength(reader io.Reader) int {
-	var rLength uint32
-	var multiplier uint32
-	b := make([]byte, 1)
-	for multiplier < 27 { //fix: Infinite '(digit & 128) == 1' will cause the dead loop
-		io.ReadFull(reader, b)
-
-		digit := b[0]
-		rLength |= uint32(digit&127) << multiplier
-		if (digit & 128) == 0 {
-			break
-		}
-		multiplier += 7
-	}
-	return int(rLength)
-}
-
-// decode mqtt v3.1.1 packet
-func decodeV311Packet(reader io.Reader) (Packet, error) {
-	headerBytes := make([]byte, 1)
-	var err error
-	if _, err = io.ReadFull(reader, headerBytes[:]); err != nil {
+// decode mqtt v3.1.1 packets
+func decodeV311Packet(r BufferedReader) (Packet, error) {
+	header, err := r.ReadByte()
+	if err != nil {
 		return nil, err
 	}
 
-	bytesToRead := decodeRemainLength(reader)
+	bytesToRead, _ := getRemainLength(r)
 	if bytesToRead == 0 {
-		switch headerBytes[0] >> 4 {
+		switch CtrlType(header >> 4) {
 		case CtrlPingReq:
 			return PingReqPacket, nil
 		case CtrlPingResp:
 			return PingRespPacket, nil
 		case CtrlDisConn:
-			return DisConnPacket, nil
+			return &DisConnPacket{}, nil
 		default:
 			return nil, ErrDecodeBadPacket
 		}
@@ -102,64 +70,67 @@ func decodeV311Packet(reader io.Reader) (Packet, error) {
 	}
 
 	body := make([]byte, bytesToRead)
-	if _, err = io.ReadFull(reader, body[:]); err != nil {
+	if _, err = io.ReadFull(r, body[:]); err != nil {
 		return nil, err
 	}
 
-	header := headerBytes[0]
-	var next []byte
-	switch header >> 4 {
+	switch CtrlType(header >> 4) {
 	case CtrlConn:
-		var protocol string
-		if protocol, next, err = decodeString(body); err != nil {
+		protocol, body, err := getString(body)
+		if err != nil {
 			return nil, err
 		}
 
-		if len(next) < 4 {
+		if body[0] != byte(V311) {
+			return nil, ErrDecodeNoneV311Packet
+		}
+
+		if len(body) < 4 {
 			return nil, ErrDecodeBadPacket
 		}
-		hasUsername := next[1]&0x80 == 0x80
-		hasPassword := next[1]&0x40 == 0x40
-		tmpPkt := &ConnPacket{
-			protoName:    protocol,
-			protoLevel:   next[0],
-			CleanSession: next[1]&0x02 == 0x02,
-			IsWill:       next[1]&0x04 == 0x04,
-			WillQos:      next[1] & 0x18 >> 3,
-			WillRetain:   next[1]&0x20 == 0x20,
-			Keepalive:    uint16(next[2])<<8 + uint16(next[3]),
+		hasUsername := body[1]&0x80 == 0x80
+		hasPassword := body[1]&0x40 == 0x40
+		pkt := &ConnPacket{
+			ProtoName:    protocol,
+			CleanSession: body[1]&0x02 == 0x02,
+			IsWill:       body[1]&0x04 == 0x04,
+			WillQos:      body[1] & 0x18 >> 3,
+			WillRetain:   body[1]&0x20 == 0x20,
+			Keepalive:    getUint16(body[2:4]),
 		}
-		if tmpPkt.ClientID, next, err = decodeString(next[4:]); err != nil {
+		pkt.ProtoVersion = ProtoVersion(body[0])
+
+		if pkt.ClientID, body, err = getString(body[4:]); err != nil {
 			return nil, err
 		}
 
-		if tmpPkt.IsWill {
-			tmpPkt.WillTopic, next, err = decodeString(next)
-			tmpPkt.WillMessage, next, err = decodeData(next)
+		if pkt.IsWill {
+			pkt.WillTopic, body, err = getString(body)
+			pkt.WillMessage, body, err = getBinaryData(body)
 		}
 
 		if hasUsername {
-			tmpPkt.Username, next, err = decodeString(next)
+			pkt.Username, body, err = getString(body)
 		}
 
 		if hasPassword {
-			tmpPkt.Password, _, err = decodeString(next)
+			pkt.Password, _, err = getString(body)
 		}
 
 		if err != nil {
 			return nil, err
 		}
 
-		return tmpPkt, nil
+		return pkt, nil
 	case CtrlConnAck:
 		return &ConnAckPacket{Present: body[0]&0x01 == 0x01, Code: body[1]}, nil
 	case CtrlPublish:
-		var topicName string
-		if topicName, next, err = decodeString(body); err != nil {
+		topicName, body, err := getString(body)
+		if err != nil {
 			return nil, err
 		}
 
-		if len(next) < 2 {
+		if len(body) < 2 {
 			return nil, ErrDecodeBadPacket
 		}
 
@@ -171,86 +142,89 @@ func decodeV311Packet(reader io.Reader) (Packet, error) {
 		}
 
 		if pub.Qos > Qos0 {
-			pub.PacketID = uint16(next[0])<<8 + uint16(next[1])
-			next = next[2:]
+			pub.PacketID = getUint16(body)
+			body = body[2:]
 		}
 
-		pub.Payload = next
+		pub.Payload = body
 		return pub, nil
 	case CtrlPubAck:
-		return &PubAckPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
+		return &PubAckPacket{PacketID: getUint16(body)}, nil
 	case CtrlPubRecv:
-		return &PubRecvPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
+		return &PubRecvPacket{PacketID: getUint16(body)}, nil
 	case CtrlPubRel:
-		return &PubRelPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
+		return &PubRelPacket{PacketID: getUint16(body)}, nil
 	case CtrlPubComp:
-		return &PubCompPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
+		return &PubCompPacket{PacketID: getUint16(body)}, nil
 	case CtrlSubscribe:
-		pktTmp := &SubscribePacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}
+		pkt := &SubscribePacket{
+			PacketID: getUint16(body),
+			Topics:   make([]*Topic, 0),
+		}
 
-		next = body[2:]
-		topics := make([]*Topic, 0)
-		for len(next) > 0 {
+		body = body[2:]
+		for len(body) > 0 {
 			var name string
-			if name, next, err = decodeString(next); err != nil {
+			if name, body, err = getString(body); err != nil {
 				return nil, err
 			}
 
-			if len(next) < 1 {
+			if len(body) < 1 {
 				return nil, ErrDecodeBadPacket
 			}
 
-			topics = append(topics, &Topic{Name: name, Qos: next[0]})
-			next = next[1:]
+			pkt.Topics = append(pkt.Topics, &Topic{Name: name, Qos: body[0]})
+			body = body[1:]
 		}
-		pktTmp.Topics = topics
-		return pktTmp, nil
+		return pkt, nil
 	case CtrlSubAck:
-		pktTmp := &SubAckPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}
-
-		next = body[2:]
-		codes := make([]SubAckCode, 0)
-		for i := 0; i < len(next); i++ {
-			codes = append(codes, next[i])
+		pkt := &SubAckPacket{
+			PacketID: getUint16(body),
+			Codes:    make([]byte, 0),
 		}
-		return pktTmp, nil
+
+		body = body[2:]
+		for i := range body {
+			pkt.Codes = append(pkt.Codes, body[i])
+		}
+		return pkt, nil
 	case CtrlUnSub:
-		pktTmp := &UnSubPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}
-		next = body[2:]
-		topics := make([]string, 0)
-		for len(next) > 0 {
+		pkt := &UnSubPacket{
+			PacketID:   getUint16(body),
+			TopicNames: make([]string, 0),
+		}
+
+		body = body[2:]
+		for len(body) > 0 {
 			var name string
-			name, next, err = decodeString(next)
+			name, body, err = getString(body)
 			if err != nil {
 				return nil, err
 			}
-			topics = append(topics, name)
+			pkt.TopicNames = append(pkt.TopicNames, name)
 		}
-		pktTmp.TopicNames = topics
-		return pktTmp, nil
+		return pkt, nil
 	case CtrlUnSubAck:
-		return &UnSubAckPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
+		return &UnSubAckPacket{PacketID: getUint16(body)}, nil
 	}
 
 	return nil, ErrDecodeBadPacket
 }
 
-func decodeV5Packet(reader io.Reader) (Packet, error) {
-	headerBytes := make([]byte, 1)
-	var err error
-	if _, err = io.ReadFull(reader, headerBytes[:]); err != nil {
+// decode mqtt v5 packets
+func decodeV5Packet(r BufferedReader) (Packet, error) {
+	header, err := r.ReadByte()
+	if err != nil {
 		return nil, err
 	}
 
-	bytesToRead := decodeRemainLength(reader)
+	bytesToRead, _ := getRemainLength(r)
 	if bytesToRead == 0 {
-		switch headerBytes[0] >> 4 {
+		switch CtrlType(header >> 4) {
 		case CtrlPingReq:
 			return PingReqPacket, nil
 		case CtrlPingResp:
 			return PingRespPacket, nil
-		case CtrlDisConn:
-			return DisConnPacket, nil
 		default:
 			return nil, ErrDecodeBadPacket
 		}
@@ -259,63 +233,79 @@ func decodeV5Packet(reader io.Reader) (Packet, error) {
 	}
 
 	body := make([]byte, bytesToRead)
-	if _, err = io.ReadFull(reader, body[:]); err != nil {
+	if _, err = io.ReadFull(r, body[:]); err != nil {
 		return nil, err
 	}
 
-	header := headerBytes[0]
-	var next []byte
-	switch header >> 4 {
+	switch CtrlType(header >> 4) {
 	case CtrlConn:
-		var protocol string
-		if protocol, next, err = decodeString(body); err != nil {
+		protocol, next, err := getString(body)
+		if err != nil {
 			return nil, err
 		}
 
-		if len(next) < 4 {
+		if next[0] != byte(V5) {
+			return nil, ErrDecodeNoneV5Packet
+		}
+
+		if len(next) < 5 {
 			return nil, ErrDecodeBadPacket
 		}
+
 		hasUsername := next[1]&0x80 == 0x80
 		hasPassword := next[1]&0x40 == 0x40
-		tmpPkt := &ConnPacket{
-			protoName:    protocol,
-			protoLevel:   next[0],
+		pkt := &ConnPacket{
+			ProtoName:    protocol,
 			CleanSession: next[1]&0x02 == 0x02,
 			IsWill:       next[1]&0x04 == 0x04,
 			WillQos:      next[1] & 0x18 >> 3,
 			WillRetain:   next[1]&0x20 == 0x20,
-			Keepalive:    uint16(next[2])<<8 + uint16(next[3]),
+			Keepalive:    getUint16(next[2:4]),
+			Props:        &ConnProps{},
 		}
-		if tmpPkt.ClientID, next, err = decodeString(next[4:]); err != nil {
+		pkt.ProtoVersion = ProtoVersion(body[0])
+
+		// read properties
+		var props map[byte][]byte
+		props, next = getRawProps(next[4:])
+		pkt.Props.setProps(props)
+
+		if pkt.ClientID, next, err = getString(next); err != nil {
 			return nil, err
 		}
 
-		if tmpPkt.IsWill {
-			tmpPkt.WillTopic, next, err = decodeString(next)
-			tmpPkt.WillMessage, next, err = decodeData(next)
+		if pkt.IsWill {
+			pkt.WillTopic, next, err = getString(next)
+			pkt.WillMessage, next, err = getBinaryData(next)
 		}
 
 		if hasUsername {
-			tmpPkt.Username, next, err = decodeString(next)
+			pkt.Username, next, err = getString(next)
 		}
 
 		if hasPassword {
-			tmpPkt.Password, _, err = decodeString(next)
+			pkt.Password, _, err = getString(next)
 		}
 
 		if err != nil {
 			return nil, err
 		}
 
-		return tmpPkt, nil
+		return pkt, nil
 	case CtrlConnAck:
-		return &ConnAckPacket{
+		pkt := &ConnAckPacket{
 			Present: body[0]&0x01 == 0x01,
 			Code:    body[1],
-		}, nil
+			Props:   &ConnAckProps{},
+		}
+
+		props, _ := getRawProps(body[2:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
 	case CtrlPublish:
-		var topicName string
-		if topicName, next, err = decodeString(body); err != nil {
+		topicName, next, err := getString(body)
+		if err != nil {
 			return nil, err
 		}
 
@@ -328,31 +318,75 @@ func decodeV5Packet(reader io.Reader) (Packet, error) {
 			Qos:       header & 0x06 >> 1,
 			IsRetain:  header&0x01 == 1,
 			TopicName: topicName,
+			Props:     &PublishProps{},
 		}
 
 		if pub.Qos > Qos0 {
-			pub.PacketID = uint16(next[0])<<8 + uint16(next[1])
+			pub.PacketID = getUint16(next)
 			next = next[2:]
 		}
+
+		var props map[byte][]byte
+		props, next = getRawProps(body[3:])
+		pub.Props.setProps(props)
 
 		pub.Payload = next
 		return pub, nil
 	case CtrlPubAck:
-		return &PubAckPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
-	case CtrlPubRecv:
-		return &PubRecvPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
-	case CtrlPubRel:
-		return &PubRelPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
-	case CtrlPubComp:
-		return &PubCompPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
-	case CtrlSubscribe:
-		pktTmp := &SubscribePacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}
+		pkt := &PubAckPacket{
+			PacketID: getUint16(body),
+			Code:     body[2],
+			Props:    &PubAckProps{},
+		}
 
-		next = body[2:]
+		props, _ := getRawProps(body[3:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
+	case CtrlPubRecv:
+		pkt := &PubRecvPacket{
+			PacketID: getUint16(body),
+			Code:     body[2],
+			Props:    &PubRecvProps{},
+		}
+		props, _ := getRawProps(body[3:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
+	case CtrlPubRel:
+		pkt := &PubRelPacket{
+			PacketID: getUint16(body),
+			Code:     body[2],
+			Props:    &PubRelProps{},
+		}
+		props, _ := getRawProps(body[3:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
+	case CtrlPubComp:
+		pkt := &PubCompPacket{
+			PacketID: getUint16(body),
+			Code:     body[2],
+			Props:    &PubCompProps{},
+		}
+
+		props, _ := getRawProps(body[3:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
+	case CtrlSubscribe:
+		pkt := &SubscribePacket{
+			PacketID: getUint16(body),
+			Props:    &SubscribeProps{},
+		}
+
+		props, next := getRawProps(body[2:])
+		pkt.Props.setProps(props)
+
 		topics := make([]*Topic, 0)
 		for len(next) > 0 {
 			var name string
-			if name, next, err = decodeString(next); err != nil {
+			if name, next, err = getString(next); err != nil {
 				return nil, err
 			}
 
@@ -363,36 +397,72 @@ func decodeV5Packet(reader io.Reader) (Packet, error) {
 			topics = append(topics, &Topic{Name: name, Qos: next[0]})
 			next = next[1:]
 		}
-		pktTmp.Topics = topics
-		return pktTmp, nil
+		pkt.Topics = topics
+		return pkt, nil
 	case CtrlSubAck:
-		pktTmp := &SubAckPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}
-
-		next = body[2:]
-		codes := make([]SubAckCode, 0)
-		for i := 0; i < len(next); i++ {
-			codes = append(codes, next[i])
+		pkt := &SubAckPacket{
+			PacketID: getUint16(body),
+			Props:    &SubAckProps{},
 		}
-		return pktTmp, nil
+
+		props, next := getRawProps(body[2:])
+		pkt.Props.setProps(props)
+
+		pkt.Codes = make([]byte, 0)
+		for i := 0; i < len(next); i++ {
+			pkt.Codes = append(pkt.Codes, next[i])
+		}
+		return pkt, nil
 	case CtrlUnSub:
-		pktTmp := &UnSubPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}
-		next = body[2:]
-		topics := make([]string, 0)
+		pkt := &UnSubPacket{
+			PacketID: getUint16(body),
+			Props:    &UnSubProps{},
+		}
+
+		props, next := getRawProps(body[2:])
+		pkt.Props.setProps(props)
+
+		pkt.TopicNames = make([]string, 0)
 		for len(next) > 0 {
 			var name string
-			name, next, err = decodeString(next)
+			name, next, err = getString(next)
 			if err != nil {
 				return nil, err
 			}
-			topics = append(topics, name)
+			pkt.TopicNames = append(pkt.TopicNames, name)
 		}
-		pktTmp.TopicNames = topics
-		return pktTmp, nil
+		return pkt, nil
 	case CtrlUnSubAck:
-		return &UnSubAckPacket{PacketID: uint16(body[0])<<8 + uint16(body[1])}, nil
-	case CtrlAuth:
-		//return
-	}
+		pkt := &UnSubAckPacket{
+			PacketID: getUint16(body),
+			Props:    &UnSubAckProps{},
+		}
 
-	return nil, ErrDecodeBadPacket
+		props, _ := getRawProps(body[2:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
+	case CtrlDisConn:
+		pkt := &DisConnPacket{
+			Code:  body[0],
+			Props: &DisConnProps{},
+		}
+
+		props, _ := getRawProps(body[1:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
+	case CtrlAuth:
+		pkt := &AuthPacket{
+			Code:  body[0],
+			Props: &AuthProps{},
+		}
+
+		props, _ := getRawProps(body[1:])
+		pkt.Props.setProps(props)
+
+		return pkt, nil
+	default:
+		return nil, ErrDecodeBadPacket
+	}
 }

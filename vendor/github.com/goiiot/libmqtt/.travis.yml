@@ -7,7 +7,6 @@ services:
 
 go:
   - 1.9.x
-  - tip
 
 # install emqttd docker
 before_install:
@@ -20,7 +19,7 @@ before_install:
 before_script:
   - go get -t -v ./...
   - docker run -d --name emq -p 1883:1883 -p 8083:8083 -p 8883:8883 -p 8084:8084 -p 18083:18083 emqttd-docker-v2.3.1
-  - sleep 15
+  - sleep 20
 
 script:
   - make test

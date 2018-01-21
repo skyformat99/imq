@@ -73,7 +73,7 @@ const (
 
 type config struct {
 	// service config
-	version                            libmqtt.ProtocolVersion
+	version                            libmqtt.ProtoVersion
 	compatible                         bool
 	listen, tlsCertFile, tlsKeyFile    string
 	tcpPort, tcpsPort, wsPort, wssPort int
@@ -143,7 +143,7 @@ func Flags() []cli.Flag {
 func getConfig(ctx *cli.Context) *config {
 	return &config{
 		// service config
-		version: func() libmqtt.ProtocolVersion {
+		version: func() libmqtt.ProtoVersion {
 			switch ctx.String(cfgVersion) {
 			case "3.1.1":
 				return libmqtt.V311

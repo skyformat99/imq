@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,11 +63,11 @@ func testPersist(p PersistMethod, t *testing.T) {
 }
 
 func TestMemPersist(t *testing.T) {
-	p := NewMemPersist(testPersistStrategy)
-
+	tmp := NewMemPersist(testPersistStrategy)
+	p := tmp.(*memPersist)
 	for i, k := range testPersistKeys {
 		if err := p.Store(k, testPersistPackets[i]); err != nil {
-			if err != PacketDroppedByStrategy {
+			if err != ErrPacketDroppedByStrategy {
 				t.Error(err)
 			}
 		}
@@ -87,11 +87,12 @@ func TestFilePersist(t *testing.T) {
 		t.Error(err)
 	}
 
-	p := NewFilePersist(dirPath, testPersistStrategy)
+	tmp := NewFilePersist(dirPath, testPersistStrategy)
+	p := tmp.(*filePersist)
 
 	for i, k := range testPersistKeys {
 		if err := p.Store(k, testPersistPackets[i]); err != nil {
-			if err != PacketDroppedByStrategy {
+			if err != ErrPacketDroppedByStrategy {
 				t.Error(err)
 			}
 		}

@@ -53,7 +53,7 @@ make run-jni
 0. Import package
 
 ```java
-import cc.goiiot.libmqtt.*;
+import org.goiiot.libmqtt.*;
 ```
 
 1. Create a client with client builder
@@ -143,12 +143,12 @@ client.connect();
 client.waintClient();
 ```
 
-You can refer to the [example](./cc/goiiot/libmqtt/example/) for a full usage example
+You can refer to the [example](./org/goiiot/libmqtt/example/) for a full usage example
 
 ## LICENSE
 
 ```text
-Copyright GoIIoT (https://github.com/goiiot)
+Copyright Go-IIoT (https://github.com/goiiot)
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

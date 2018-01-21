@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,3 @@
  */
 
 package extension
-
-import (
-	lib "github.com/goiiot/libmqtt"
-)
-
-// HttpRouter is a HTTP URL style router
-type HttpRouter struct {
-}
-
-// Name of HttpRouter is "HttpRouter"
-func (r *HttpRouter) Name() string {
-	if r == nil {
-		return "<nil>"
-	}
-
-	return "HttpRouter"
-}
-
-// Handle the topic with TopicHandler h
-func (r *HttpRouter) Handle(topic string, h lib.TopicHandler) {
-
-}
-
-// Dispatch the received packet
-func (r *HttpRouter) Dispatch(p *lib.PublishPacket) {
-
-}

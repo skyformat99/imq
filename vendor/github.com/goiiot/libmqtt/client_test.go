@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -111,12 +111,12 @@ func initClient(c Client, exH *extraHandler, t *testing.T) {
 }
 
 func testConn(c Client, t *testing.T, afterConnSuccess func()) {
-	c.Connect(func(server string, code ConnAckCode, err error) {
+	c.Connect(func(server string, code byte, err error) {
 		if err != nil {
 			t.Error(err)
 		}
 
-		if code != ConnAccepted {
+		if code != CodeSuccess {
 			t.Error(code)
 		}
 
@@ -127,7 +127,7 @@ func testConn(c Client, t *testing.T, afterConnSuccess func()) {
 }
 
 func testSub(c Client, t *testing.T) {
-	c.Handle(testTopics[0], func(topic string, maxQos SubAckCode, msg []byte) {
+	c.Handle(testTopics[0], func(topic string, maxQos byte, msg []byte) {
 		if maxQos != testPubMsgs[0].Qos || bytes.Compare(testPubMsgs[0].Payload, msg) != 0 {
 			t.Error("fail at sub topic =", topic,
 				", content unexcepted, payload =", string(msg),

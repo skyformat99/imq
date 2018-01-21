@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,17 +32,27 @@ var (
 //
 // This Packet is used in Keep Alive processing
 type pingReqPacket struct {
+	basePacket
 }
 
-func (s *pingReqPacket) Type() CtrlType {
+func (p *pingReqPacket) Type() CtrlType {
 	return CtrlPingReq
+}
+
+func (p *pingReqPacket) Bytes() []byte {
+	return p.bytes(p)
 }
 
 // pingRespPacket is sent by the Server to the Client in response to
 // a pingReqPacket. It indicates that the Server is alive.
 type pingRespPacket struct {
+	basePacket
 }
 
-func (s *pingRespPacket) Type() CtrlType {
+func (p *pingRespPacket) Type() CtrlType {
 	return CtrlPingResp
+}
+
+func (p *pingRespPacket) Bytes() []byte {
+	return p.bytes(p)
 }

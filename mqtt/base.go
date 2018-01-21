@@ -43,6 +43,7 @@ var (
 	wssService  *http.Server
 )
 
+// Init mqtt service
 func Init(exit context.Context, context *cli.Context) {
 	var err error
 	log, err = zap.NewDevelopment()
@@ -54,22 +55,22 @@ func Init(exit context.Context, context *cli.Context) {
 
 	if conf.tcpPort > 0 {
 		wg.Add(1)
-		go initTcpListen()
+		go initTCPListen()
 	}
 
 	if conf.tcpsPort > 0 {
 		wg.Add(1)
-		go initTcpsListen()
+		go initTCPSListen()
 	}
 
 	if conf.wsPort > 0 {
 		wg.Add(1)
-		go initWsListen()
+		go initWSListen()
 	}
 
 	if conf.wssPort > 0 {
 		wg.Add(1)
-		go initWssListen()
+		go initWSSListen()
 	}
 
 	wg.Add(1)
@@ -77,6 +78,7 @@ func Init(exit context.Context, context *cli.Context) {
 		<-exit.Done()
 		log.Info("exiting mqtt services")
 		destroy(10 * time.Second)
+		wg.Done()
 	}()
 
 	wg.Wait()
@@ -104,7 +106,7 @@ func destroy(timeout time.Duration) {
 	}
 }
 
-func initTcpListen() {
+func initTCPListen() {
 	defer wg.Done()
 
 	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", conf.listen, conf.tcpPort))
@@ -125,11 +127,11 @@ func initTcpListen() {
 			continue
 		}
 		log.Debug("accepted tcp connection")
-		go tcpWorker(conn)
+		go handleConn(conn)
 	}
 }
 
-func initTcpsListen() {
+func initTCPSListen() {
 	defer wg.Done()
 
 	cert, err := tls.LoadX509KeyPair(conf.tlsCertFile, conf.tlsKeyFile)
@@ -155,16 +157,16 @@ func initTcpsListen() {
 			continue
 		}
 		log.Debug("accepted tcps connection", zap.String("addr", conn.RemoteAddr().String()))
-		go tcpWorker(conn)
+		go handleConn(conn)
 	}
 
 }
 
-func initWsListen() {
+func initWSListen() {
 	defer wg.Done()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mqtt", httpWorker)
+	mux.HandleFunc("/mqtt", handleWS)
 
 	wsService := &http.Server{
 		Addr:    fmt.Sprintf("%s:%d", conf.listen, conf.wsPort),
@@ -178,7 +180,7 @@ func initWsListen() {
 	}
 }
 
-func initWssListen() {
+func initWSSListen() {
 	defer wg.Done()
 
 	cert, err := tls.LoadX509KeyPair(conf.tlsCertFile, conf.tlsKeyFile)
@@ -192,7 +194,7 @@ func initWssListen() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/mqtt", httpWorker)
+	mux.HandleFunc("/mqtt", handleWS)
 	wssService := &http.Server{
 		Addr:      fmt.Sprintf("%s:%d", conf.listen, conf.wssPort),
 		TLSConfig: config,

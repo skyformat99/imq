@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import (
 	mq "github.com/goiiot/libmqtt"
 )
 
-func connHandler(server string, code mq.ConnAckCode, err error) {
+func connHandler(server string, code byte, err error) {
 	if err != nil {
 		println("\nconnect to server error:", err)
-	} else if code != mq.ConnAccepted {
+	} else if code != mq.CodeSuccess {
 		println("\nconnection rejected by server, code:", code)
 	} else {
 		println("\nconnected to server")

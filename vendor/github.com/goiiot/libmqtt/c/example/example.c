@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,10 @@
 #include <unistd.h>
 
 #include "libmqtt.h"
+
+typedef int bool;
+#define true  1
+#define false 0
 
 // example log level for libmqtt log
 #define LOG_LEVEL           libmqtt_log_silent
@@ -50,10 +54,11 @@
 static int client;
 
 // conn_handler for connect packet response
-void conn_handler(int client, char *server, libmqtt_connack_t code, char *err) {
+void conn_handler(int client, char *server, int code, char *err) {
   if (err != NULL) {
-    printf("client: %d connect to server: %s failed, error = %s\n", client, server, err);
-  } else if (code != libmqtt_connack_accepted) {
+    printf("client: %d connect to server: %s failed, error = %s\n", client, server,
+           err);
+  } else if (code != 0) {
     printf("client: %d connect to server rejected, code: %d\n", client, code);
   } else {
     // connected to the server, subscribe some topic
@@ -96,21 +101,25 @@ void unsub_handler(int client, char *topic, char *err) {
 
 // net_handler for net connection information, called only when error happens
 void net_handler(int client, char *server, char *err) {
-  printf("client: %d conn to server: %s broken, error = %s\n", client, server, err);
+  printf("client: %d conn to server: %s broken, error = %s\n", client, server,
+         err);
 }
 
 // topic_handler, just a example topic handler
 void topic_handler(int client, char *topic, int qos, char *msg, int size) {
-  printf("client: %d recv topic: %s, qos: %d, msg: %s\n", client, topic, qos, msg);
+  printf("client: %d recv topic: %s, qos: %d, msg: %s\n", client, topic, qos,
+         msg);
 }
 
 // set client options
 void init() {
   client = Libmqtt_new_client();
+
   if (client < 1) {
     printf("create client failed\n");
     exit(1);
   }
+
   printf("create client success, client = %d\n", client);
 
   Libmqtt_client_with_server(client, SERVER);
@@ -119,18 +128,22 @@ void init() {
   Libmqtt_client_with_keepalive(client, KEEPALIVE_INTERVAL, KEEPALIVE_FACTOR);
   Libmqtt_client_with_identity(client, USER, PASS);
   Libmqtt_client_with_client_id(client, CLIENT_ID);
+
   if (USE_TLS) {
-    Libmqtt_client_with_tls(client, SSL_CLIENT_CERT, SSL_CLIENT_KEY, SSL_CA_CERT, SSL_SERVER_NAME, SSL_SKIP_VERIFY);
+    Libmqtt_client_with_tls(client, SSL_CLIENT_CERT, SSL_CLIENT_KEY, SSL_CA_CERT,
+                            SSL_SERVER_NAME, SSL_SKIP_VERIFY);
   }
 }
 
 int main(int argc, char *argv[]) {
   init();
   char *err = Libmqtt_setup_client(client);
+
   if (err != NULL) {
     printf("client: %d error happened when setup client: %s\n", client, err);
     return 1;
   }
+
   printf("setup client success\n");
 
   Libmqtt_set_pub_handler(client, &pub_handler);
@@ -141,7 +154,7 @@ int main(int argc, char *argv[]) {
 
   // connect to server
   Libmqtt_connect(client, &conn_handler);
-  
+
   // wait until all connection exit
   Libmqtt_wait(client);
 }

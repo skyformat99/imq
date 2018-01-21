@@ -1,5 +1,5 @@
 /*
- * Copyright GoIIoT (https://github.com/goiiot)
+ * Copyright Go-IIoT (https://github.com/goiiot)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,50 +34,44 @@ type message struct {
 	obj  interface{}
 }
 
-func notifyMsg(ch chan<- *message, msg *message) {
-	if msg != nil {
-		ch <- msg
-	}
-}
-
-func newPubMsg(topic string, err error) *message {
-	return &message{
+func notifyPubMsg(ch chan<- *message, topic string, err error) {
+	ch <- &message{
 		what: pubMsg,
 		msg:  topic,
 		err:  err,
 	}
 }
 
-func newSubMsg(p []*Topic, err error) *message {
-	return &message{
+func notifySubMsg(ch chan<- *message, p []*Topic, err error) {
+	ch <- &message{
 		what: subMsg,
 		obj:  p,
 		err:  err,
 	}
 }
 
-func newUnSubMsg(topics []string, err error) *message {
-	return &message{
+func notifyUnSubMsg(ch chan<- *message, topics []string, err error) {
+	ch <- &message{
 		what: unSubMsg,
 		err:  err,
 		obj:  topics,
 	}
 }
 
-func newNetMsg(server string, err error) *message {
-	return &message{
+func notifyNetMsg(ch chan<- *message, server string, err error) {
+	ch <- &message{
 		what: netMsg,
 		msg:  server,
 		err:  err,
 	}
 }
 
-func newPersistMsg(err error) *message {
+func notifyPersistMsg(ch chan<- *message, err error) {
 	if err == nil {
-		return nil
+		return
 	}
 
-	return &message{
+	ch <- &message{
 		what: persistMsg,
 		err:  err,
 	}
